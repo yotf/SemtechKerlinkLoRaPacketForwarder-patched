@@ -55,6 +55,6 @@
 		"forward_crc_error": false,
 		"forward_crc_disabled": false,
 		/* GPS configuration */
-		"gps_tty_path": "/dev/ttyACM0"
+		"gps_tty_path": "/dev/nmea"
 	}
 }

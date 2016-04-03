@@ -28,7 +28,6 @@ Maintainer: Sylvain Miermont
 #include <stdbool.h>	/* bool type */
 #include <stdio.h>		/* printf, fprintf, snprintf, fopen, fputs */
 
-
 #include <string.h>		/* memset */
 #include <signal.h>		/* sigaction */
 #include <time.h>		/* time, clock_gettime, strftime, gmtime */
@@ -37,7 +36,6 @@ Maintainer: Sylvain Miermont
 #include <stdlib.h>		/* atoi, exit */
 #include <errno.h>		/* error messages */
 
-
 #include <sys/socket.h> /* socket specific definitions */
 #include <netinet/in.h> /* INET constants and stuff */
 #include <arpa/inet.h>  /* IP address conversion stuff */
@@ -45,13 +43,10 @@ Maintainer: Sylvain Miermont
 
 #include <pthread.h>
 
-
 #include "parson.h"
 #include "base64.h"
 #include "loragw_hal.h"
 #include "loragw_aux.h"
-#include "logging.h"
-
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -157,12 +152,6 @@ int parse_SX1301_configuration(const char * conf_file);
 
 int parse_gateway_configuration(const char * conf_file);
 
-static void dump_packet(struct lgw_pkt_rx_s * pkt, uint8_t * json_buff, int header_size);
-
-static void dump_json(uint8_t * json_buff, int header_size);
-
-static int parse_logging_configuration(const char * conf_file);
-
 /* threads */
 void thread_up(void);
 void thread_down(void);
@@ -170,63 +159,6 @@ void thread_down(void);
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
-/* Print the JSON and the payload in HEX */
-
-static int parse_logging_configuration(const char * conf_file){
-    const char conf_obj_name[] = "logging_conf";
-	JSON_Value *root_val;
-	JSON_Object *conf_obj = NULL;
-	JSON_Value *val = NULL; /* needed to detect the absence of some
-                             * fields */
-    int temp; /* for checking whether number is in needed range */
-
-
-    /* try to parse JSON */
-	root_val = json_parse_file_with_comments(conf_file);
-	if (root_val == NULL) {
-		LOG(LOG_ERR,"%s is not a valid JSON file\n", conf_file);
-		exit(EXIT_FAILURE);
-	}
-	
-	/* point to the logging configuration object */
-	conf_obj = json_object_get_object(json_value_get_object(root_val), conf_obj_name);
-	if (conf_obj == NULL) {
-		LOG(LOG_DEBUG,"%s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
-		return -1;
-	} else {
-		LOG(LOG_DEBUG,"%s does contain a JSON object named %s, parsing gateway parameters\n", conf_file, conf_obj_name);
-	}
-
-
-    val = json_object_get_value(conf_obj, "logging_level");
-    if(val!=NULL && json_value_get_type(val) == JSONNumber ){
-            temp = (uint8_t)json_value_get_number(val);
-            if(temp<0 || temp>7 ) {
-                    LOG(LOG_WARNING, "The logging level should be between 0-7, please check\n");
-            } else{
-                    logging_level=temp;
-            }
-    }
-    LOG(LOG_DEBUG, "the logging level is set to %s\n", logging_names[logging_level]);
-
-    val = json_object_get_value(conf_obj, "stdout");
-    if(val!=NULL && json_value_get_type(val) == JSONBoolean ){
-            use_printf = (bool)json_value_get_boolean(val);
-    }
-    LOG(LOG_DEBUG, "the output will%s be printed to stdout\n", (use_printf?"":" NOT"));
-
-    val = json_object_get_value(conf_obj, "syslog");
-    if(val!=NULL && json_value_get_type(val) == JSONBoolean ){
-            use_syslog = (bool)json_value_get_boolean(val);
-    }
-    LOG(LOG_DEBUG, "the output will%s be sent to syslog\n", (use_syslog?"":" NOT"));
-
-    json_value_free(root_val);
-	return 0;
-
-    
-        
-}
 static void sig_handler(int sigio) {
 	if (sigio == SIGQUIT) {
 		quit_sig = true;;
@@ -250,17 +182,17 @@ int parse_SX1301_configuration(const char * conf_file) {
 	/* try to parse JSON */
 	root_val = json_parse_file_with_comments(conf_file);
 	if (root_val == NULL) {
-		LOG(LOG_ERR,"%s is not a valid JSON file\n", conf_file);
+		MSG("ERROR: %s is not a valid JSON file\n", conf_file);
 		exit(EXIT_FAILURE);
 	}
 	
 	/* point to the gateway configuration object */
 	conf_obj = json_object_get_object(json_value_get_object(root_val), conf_obj_name);
 	if (conf_obj == NULL) {
-		LOG(LOG_DEBUG,"%s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
+		MSG("INFO: %s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
 		return -1;
 	} else {
-		LOG(LOG_DEBUG,"%s does contain a JSON object named %s, parsing SX1301 parameters\n", conf_file, conf_obj_name);
+		MSG("INFO: %s does contain a JSON object named %s, parsing SX1301 parameters\n", conf_file, conf_obj_name);
 	}
 	
 	/* set configuration for RF chains */
@@ -269,7 +201,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 		snprintf(param_name, sizeof param_name, "radio_%i", i); /* compose parameter path inside JSON structure */
 		val = json_object_get_value(conf_obj, param_name); /* fetch value (if possible) */
 		if (json_value_get_type(val) != JSONObject) {
-			LOG(LOG_DEBUG,"no configuration for radio %i\n", i);
+			MSG("INFO: no configuration for radio %i\n", i);
 			continue;
 		}
 		/* there is an object to configure that radio, let's parse it */
@@ -281,15 +213,15 @@ int parse_SX1301_configuration(const char * conf_file) {
 			rfconf.enable = false;
 		}
 		if (rfconf.enable == false) { /* radio disabled, nothing else to parse */
-			LOG(LOG_DEBUG,"radio %i disabled\n", i);
+			MSG("INFO: radio %i disabled\n", i);
 		} else  { /* radio enabled, will parse the other parameters */
 			snprintf(param_name, sizeof param_name, "radio_%i.freq", i);
 			rfconf.freq_hz = (uint32_t)json_object_dotget_number(conf_obj, param_name);
-			LOG(LOG_DEBUG,"radio %i enabled, center frequency %u\n", i, rfconf.freq_hz);
+			MSG("INFO: radio %i enabled, center frequency %u\n", i, rfconf.freq_hz);
 		}
 		/* all parameters parsed, submitting configuration to the HAL */
 		if (lgw_rxrf_setconf(i, rfconf) != LGW_HAL_SUCCESS) {
-                LOG(LOG_WARNING,"invalid configuration for radio %i\n", i);
+			MSG("WARNING: invalid configuration for radio %i\n", i);
 		}
 	}
 	
@@ -299,7 +231,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 		snprintf(param_name, sizeof param_name, "chan_multiSF_%i", i); /* compose parameter path inside JSON structure */
 		val = json_object_get_value(conf_obj, param_name); /* fetch value (if possible) */
 		if (json_value_get_type(val) != JSONObject) {
-			LOG(LOG_DEBUG,"no configuration for Lora multi-SF channel %i\n", i);
+			MSG("INFO: no configuration for Lora multi-SF channel %i\n", i);
 			continue;
 		}
 		/* there is an object to configure that Lora multi-SF channel, let's parse it */
@@ -311,18 +243,18 @@ int parse_SX1301_configuration(const char * conf_file) {
 			ifconf.enable = false;
 		}
 		if (ifconf.enable == false) { /* Lora multi-SF channel disabled, nothing else to parse */
-			LOG(LOG_DEBUG,"Lora multi-SF channel %i disabled\n", i);
+			MSG("INFO: Lora multi-SF channel %i disabled\n", i);
 		} else  { /* Lora multi-SF channel enabled, will parse the other parameters */
 			snprintf(param_name, sizeof param_name, "chan_multiSF_%i.radio", i);
 			ifconf.rf_chain = (uint32_t)json_object_dotget_number(conf_obj, param_name);
 			snprintf(param_name, sizeof param_name, "chan_multiSF_%i.if", i);
 			ifconf.freq_hz = (int32_t)json_object_dotget_number(conf_obj, param_name);
 			// TODO: handle individual SF enabling and disabling (spread_factor)
-			LOG(LOG_DEBUG,"Lora multi-SF channel %i>  radio %i, IF %i Hz, 125 kHz bw, SF 7 to 12\n", i, ifconf.rf_chain, ifconf.freq_hz);
+			MSG("INFO: Lora multi-SF channel %i>  radio %i, IF %i Hz, 125 kHz bw, SF 7 to 12\n", i, ifconf.rf_chain, ifconf.freq_hz);
 		}
 		/* all parameters parsed, submitting configuration to the HAL */
 		if (lgw_rxif_setconf(i, ifconf) != LGW_HAL_SUCCESS) {
-			LOG(LOG_WARNING,"invalid configuration for Lora multi-SF channel %i\n", i);
+			MSG("WARNING: invalid configuration for Lora multi-SF channel %i\n", i);
 		}
 	}
 	
@@ -330,7 +262,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 	memset(&ifconf, 0, sizeof ifconf); /* initialize configuration structure */
 	val = json_object_get_value(conf_obj, "chan_Lora_std"); /* fetch value (if possible) */
 	if (json_value_get_type(val) != JSONObject) {
-		LOG(LOG_DEBUG,"no configuration for Lora standard channel\n");
+		MSG("INFO: no configuration for Lora standard channel\n");
 	} else {
 		val = json_object_dotget_value(conf_obj, "chan_Lora_std.enable");
 		if (json_value_get_type(val) == JSONBoolean) {
@@ -339,7 +271,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 			ifconf.enable = false;
 		}
 		if (ifconf.enable == false) {
-			LOG(LOG_DEBUG,"Lora standard channel %i disabled\n", i);
+			MSG("INFO: Lora standard channel %i disabled\n", i);
 		} else  {
 			ifconf.rf_chain = (uint32_t)json_object_dotget_number(conf_obj, "chan_Lora_std.radio");
 			ifconf.freq_hz = (int32_t)json_object_dotget_number(conf_obj, "chan_Lora_std.if");
@@ -360,10 +292,10 @@ int parse_SX1301_configuration(const char * conf_file) {
 				case 12: ifconf.datarate = DR_LORA_SF12; break;
 				default: ifconf.datarate = DR_UNDEFINED;
 			}
-			LOG(LOG_NOTICE,"Lora std channel> radio %i, IF %i Hz, %u Hz bw, SF %u\n", ifconf.rf_chain, ifconf.freq_hz, bw, sf);
+			MSG("INFO: Lora std channel> radio %i, IF %i Hz, %u Hz bw, SF %u\n", ifconf.rf_chain, ifconf.freq_hz, bw, sf);
 		}
 		if (lgw_rxif_setconf(8, ifconf) != LGW_HAL_SUCCESS) {
-			LOG(LOG_WARNING,"invalid configuration for Lora standard channel\n");
+			MSG("WARNING: invalid configuration for Lora standard channel\n");
 		}
 	}
 	
@@ -371,7 +303,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 	memset(&ifconf, 0, sizeof ifconf); /* initialize configuration structure */
 	val = json_object_get_value(conf_obj, "chan_FSK"); /* fetch value (if possible) */
 	if (json_value_get_type(val) != JSONObject) {
-		LOG(LOG_DEBUG,"no configuration for FSK channel\n");
+		MSG("INFO: no configuration for FSK channel\n");
 	} else {
 		val = json_object_dotget_value(conf_obj, "chan_FSK.enable");
 		if (json_value_get_type(val) == JSONBoolean) {
@@ -380,7 +312,7 @@ int parse_SX1301_configuration(const char * conf_file) {
 			ifconf.enable = false;
 		}
 		if (ifconf.enable == false) {
-			LOG(LOG_DEBUG,"FSK channel %i disabled\n", i);
+			MSG("INFO: FSK channel %i disabled\n", i);
 		} else  {
 			ifconf.rf_chain = (uint32_t)json_object_dotget_number(conf_obj, "chan_FSK.radio");
 			ifconf.freq_hz = (int32_t)json_object_dotget_number(conf_obj, "chan_FSK.if");
@@ -394,10 +326,10 @@ int parse_SX1301_configuration(const char * conf_file) {
 			else if (bw <= 500000) ifconf.bandwidth = BW_500KHZ;
 			else ifconf.bandwidth = BW_UNDEFINED;
 			ifconf.datarate = (uint32_t)json_object_dotget_number(conf_obj, "chan_FSK.datarate");
-			LOG(LOG_DEBUG, "FSK channel> radio %i, IF %i Hz, %u Hz bw, %u bps datarate\n", ifconf.rf_chain, ifconf.freq_hz, bw, ifconf.datarate);
+			MSG("INFO: FSK channel> radio %i, IF %i Hz, %u Hz bw, %u bps datarate\n", ifconf.rf_chain, ifconf.freq_hz, bw, ifconf.datarate);
 		}
 		if (lgw_rxif_setconf(9, ifconf) != LGW_HAL_SUCCESS) {
-                LOG(LOG_WARNING,"invalid configuration for FSK channel\n");
+			MSG("WARNING: invalid configuration for FSK channel\n");
 		}
 	}
 	json_value_free(root_val);
@@ -415,17 +347,17 @@ int parse_gateway_configuration(const char * conf_file) {
 	/* try to parse JSON */
 	root_val = json_parse_file_with_comments(conf_file);
 	if (root_val == NULL) {
-		LOG(LOG_ERR,"%s is not a valid JSON file\n", conf_file);
+		MSG("ERROR: %s is not a valid JSON file\n", conf_file);
 		exit(EXIT_FAILURE);
 	}
 	
 	/* point to the gateway configuration object */
 	conf_obj = json_object_get_object(json_value_get_object(root_val), conf_obj_name);
 	if (conf_obj == NULL) {
-		LOG(LOG_DEBUG,"%s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
+		MSG("INFO: %s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
 		return -1;
 	} else {
-		LOG(LOG_DEBUG,"%s does contain a JSON object named %s, parsing gateway parameters\n", conf_file, conf_obj_name);
+		MSG("INFO: %s does contain a JSON object named %s, parsing gateway parameters\n", conf_file, conf_obj_name);
 	}
 	
 	/* gateway unique identifier (aka MAC address) (optional) */
@@ -433,47 +365,47 @@ int parse_gateway_configuration(const char * conf_file) {
 	if (str != NULL) {
 		sscanf(str, "%llx", &ull);
 		lgwm = ull;
-		LOG(LOG_DEBUG,"gateway MAC address is configured to %016llX\n", ull);
+		MSG("INFO: gateway MAC address is configured to %016llX\n", ull);
 	}
 	
 	/* server hostname or IP address (optional) */
 	str = json_object_get_string(conf_obj, "server_address");
 	if (str != NULL) {
 		strncpy(serv_addr, str, sizeof serv_addr);
-		LOG(LOG_DEBUG,"server hostname or IP address is configured to \"%s\"\n", serv_addr);
+		MSG("INFO: server hostname or IP address is configured to \"%s\"\n", serv_addr);
 	}
 	
 	/* get up and down ports (optional) */
 	val = json_object_get_value(conf_obj, "serv_port_up");
 	if (val != NULL) {
 		snprintf(serv_port_up, sizeof serv_port_up, "%u", (uint16_t)json_value_get_number(val));
-		LOG(LOG_DEBUG,"upstream port is configured to \"%s\"\n", serv_port_up);
+		MSG("INFO: upstream port is configured to \"%s\"\n", serv_port_up);
 	}
 	val = json_object_get_value(conf_obj, "serv_port_down");
 	if (val != NULL) {
 		snprintf(serv_port_down, sizeof serv_port_down, "%u", (uint16_t)json_value_get_number(val));
-		LOG(LOG_DEBUG,"downstream port is configured to \"%s\"\n", serv_port_down);
+		MSG("INFO: downstream port is configured to \"%s\"\n", serv_port_down);
 	}
 	
 	/* get keep-alive interval (in seconds) for downstream (optional) */
 	val = json_object_get_value(conf_obj, "keepalive_interval");
 	if (val != NULL) {
 		keepalive_time = (int)json_value_get_number(val);
-		LOG(LOG_DEBUG,"downstream keep-alive interval is configured to %u seconds\n", keepalive_time);
+		MSG("INFO: downstream keep-alive interval is configured to %u seconds\n", keepalive_time);
 	}
 	
 	/* get interval (in seconds) for statistics display (optional) */
 	val = json_object_get_value(conf_obj, "stat_interval");
 	if (val != NULL) {
 		stat_interval = (unsigned)json_value_get_number(val);
-		LOG(LOG_DEBUG,"statistics display interval is configured to %u seconds\n", stat_interval);
+		MSG("INFO: statistics display interval is configured to %u seconds\n", stat_interval);
 	}
 	
 	/* get time-out value (in ms) for upstream datagrams (optional) */
 	val = json_object_get_value(conf_obj, "push_timeout_ms");
 	if (val != NULL) {
 		push_timeout_half.tv_usec = 500 * (long int)json_value_get_number(val);
-		LOG(LOG_DEBUG,"upstream PUSH_DATA time-out is configured to %u ms\n", (unsigned)(push_timeout_half.tv_usec / 500));
+		MSG("INFO: upstream PUSH_DATA time-out is configured to %u ms\n", (unsigned)(push_timeout_half.tv_usec / 500));
 	}
 	
 	/* packet filtering parameters */
@@ -481,61 +413,28 @@ int parse_gateway_configuration(const char * conf_file) {
 	if (json_value_get_type(val) == JSONBoolean) {
 		fwd_valid_pkt = (bool)json_value_get_boolean(val);
 	}
-	LOG(LOG_DEBUG,"packets received with a valid CRC will%s be forwarded\n", (fwd_valid_pkt ? "" : " NOT"));
+	MSG("INFO: packets received with a valid CRC will%s be forwarded\n", (fwd_valid_pkt ? "" : " NOT"));
 	val = json_object_get_value(conf_obj, "forward_crc_error");
 	if (json_value_get_type(val) == JSONBoolean) {
 		fwd_error_pkt = (bool)json_value_get_boolean(val);
 	}
-	LOG(LOG_DEBUG,"packets received with a CRC error will%s be forwarded\n", (fwd_error_pkt ? "" : " NOT"));
+	MSG("INFO: packets received with a CRC error will%s be forwarded\n", (fwd_error_pkt ? "" : " NOT"));
 	val = json_object_get_value(conf_obj, "forward_crc_disabled");
 	if (json_value_get_type(val) == JSONBoolean) {
 		fwd_nocrc_pkt = (bool)json_value_get_boolean(val);
 	}
-	LOG(LOG_DEBUG,"packets received with no CRC will%s be forwarded\n", (fwd_nocrc_pkt ? "" : " NOT"));
+	MSG("INFO: packets received with no CRC will%s be forwarded\n", (fwd_nocrc_pkt ? "" : " NOT"));
 	
 	/* free JSON parsing data structure */
 	json_value_free(root_val);
 	return 0;
 }
 
-
-/*  Print out json to stdout/stderr or syslog, depending on local configuration */
-static void dump_json(uint8_t * json_buff, int header_size){
-        //TODO implement better way to discern between upstream and downstream
-        LOG(LOG_INFO,"[%s] JSON : %s \n", (header_size==4? "down":"up"), (char *)(json_buff + header_size));
-
-}
-
-/*  Print out json and payload in HEX to stdout/stderr or syslog, depending on local configuration */
-static void dump_packet(struct lgw_pkt_rx_s * pkt, uint8_t * json_buff, int header_size){
-        
-        char hex_buff[2*pkt->size+1]; // 1 byte is 2 HEX digits (in
-                                      // hex string) +1 for '\0'
-        char *ptr_hex = hex_buff; // moving pointer
-
-        dump_json(json_buff,header_size);
-
-        // convert payload to hex string
-        for (int i = 0; i <  pkt->size; i++)
-		{
-                ptr_hex += sprintf(ptr_hex,"%02X", pkt->payload[i]);
-		}
-
-        LOG(LOG_INFO,"The payload in HEX: %s\n", hex_buff);
-
-        
-        
-}
-
-
-
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
 int main(void)
 {
-
-    openlog("basic_pkt_fwd", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 	struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
 	int i; /* loop variable and temporary variable for return value */
 	
@@ -583,42 +482,40 @@ int main(void)
 	float dw_ack_ratio;
 	
 	/* display version informations */
-	LOG(LOG_NOTICE,"*** Basic Packet Forwarder for Lora Gateway ***\nVersion: " VERSION_STRING "\n");
-	LOG(LOG_NOTICE,"*** Lora concentrator HAL library version info ***\n%s\n***\n", lgw_version_info());
+	MSG("*** Basic Packet Forwarder for Lora Gateway ***\nVersion: " VERSION_STRING "\n");
+	MSG("*** Lora concentrator HAL library version info ***\n%s\n***\n", lgw_version_info());
 	
 	/* display host endianness */
 	#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        LOG(LOG_DEBUG,"Little endian host\n");
+		MSG("INFO: Little endian host\n");
 	#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-		LOG(LOG_DEBUG,"Big endian host\n");
+		MSG("INFO: Big endian host\n");
 	#else
-		LOG(LOG_DEBUG,"Host endianness unknown\n");
+		MSG("INFO: Host endianness unknown\n");
 	#endif
 	
 	/* load configuration files */
 	if (access(debug_cfg_path, R_OK) == 0) { /* if there is a debug conf, parse only the debug conf */
-		LOG(LOG_DEBUG,"found debug configuration file %s, parsing it\n", debug_cfg_path);
-		LOG(LOG_DEBUG,"other configuration files will be ignored\n");
+		MSG("INFO: found debug configuration file %s, parsing it\n", debug_cfg_path);
+		MSG("INFO: other configuration files will be ignored\n");
 		parse_SX1301_configuration(debug_cfg_path);
 		parse_gateway_configuration(debug_cfg_path);
 	} else if (access(global_cfg_path, R_OK) == 0) { /* if there is a global conf, parse it and then try to parse local conf  */
-		LOG(LOG_DEBUG,"found global configuration file %s, parsing it\n", global_cfg_path);
-        parse_logging_configuration(global_cfg_path);
+		MSG("INFO: found global configuration file %s, parsing it\n", global_cfg_path);
 		parse_SX1301_configuration(global_cfg_path);
 		parse_gateway_configuration(global_cfg_path);
 		if (access(local_cfg_path, R_OK) == 0) {
-			LOG(LOG_DEBUG,"found local configuration file %s, parsing it\n", local_cfg_path);
-			LOG(LOG_DEBUG,"redefined parameters will overwrite global parameters\n");
-            parse_logging_configuration(local_cfg_path);
+			MSG("INFO: found local configuration file %s, parsing it\n", local_cfg_path);
+			MSG("INFO: redefined parameters will overwrite global parameters\n");
 			parse_SX1301_configuration(local_cfg_path);
 			parse_gateway_configuration(local_cfg_path);
 		}
 	} else if (access(local_cfg_path, R_OK) == 0) { /* if there is only a local conf, parse it and that's all */
-		LOG(LOG_DEBUG,"found local configuration file %s, parsing it\n", local_cfg_path);
+		MSG("INFO: found local configuration file %s, parsing it\n", local_cfg_path);
 		parse_SX1301_configuration(local_cfg_path);
 		parse_gateway_configuration(local_cfg_path);
 	} else {
-		LOG(LOG_ERR,"[main] failed to find any configuration file named %s, %s OR %s\n", global_cfg_path, local_cfg_path, debug_cfg_path);
+		MSG("ERROR: [main] failed to find any configuration file named %s, %s OR %s\n", global_cfg_path, local_cfg_path, debug_cfg_path);
 		exit(EXIT_FAILURE);
 	}
 	
@@ -637,7 +534,7 @@ int main(void)
 	/* look for server address w/ upstream port */
 	i = getaddrinfo(serv_addr, serv_port_up, &hints, &result);
 	if (i != 0) {
-		LOG(LOG_ERR,"[up] getaddrinfo on address %s (PORT %s) returned %s\n", serv_addr, serv_port_up, gai_strerror(i));
+		MSG("ERROR: [up] getaddrinfo on address %s (PORT %s) returned %s\n", serv_addr, serv_port_up, gai_strerror(i));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -648,11 +545,11 @@ int main(void)
 		else break; /* success, get out of loop */
 	}
 	if (q == NULL) {
-		LOG(LOG_ERR,"[up] failed to open socket to any of server %s addresses (port %s)\n", serv_addr, serv_port_up);
+		MSG("ERROR: [up] failed to open socket to any of server %s addresses (port %s)\n", serv_addr, serv_port_up);
 		i = 1;
 		for (q=result; q!=NULL; q=q->ai_next) {
 			getnameinfo(q->ai_addr, q->ai_addrlen, host_name, sizeof host_name, port_name, sizeof port_name, NI_NUMERICHOST);
-			LOG(LOG_INFO,"[up] result %i host:%s service:%s\n", i, host_name, port_name);
+			MSG("INFO: [up] result %i host:%s service:%s\n", i, host_name, port_name);
 			++i;
 		}
 		exit(EXIT_FAILURE);
@@ -661,7 +558,7 @@ int main(void)
 	/* connect so we can send/receive packet with the server only */
 	i = connect(sock_up, q->ai_addr, q->ai_addrlen);
 	if (i != 0) {
-		LOG(LOG_ERR,"[up] connect returned %s\n", strerror(errno));
+		MSG("ERROR: [up] connect returned %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	freeaddrinfo(result);
@@ -669,7 +566,7 @@ int main(void)
 	/* look for server address w/ downstream port */
 	i = getaddrinfo(serv_addr, serv_port_down, &hints, &result);
 	if (i != 0) {
-		LOG(LOG_ERR,"[down] getaddrinfo on address %s (port %s) returned %s\n", serv_addr, serv_port_up, gai_strerror(i));
+		MSG("ERROR: [down] getaddrinfo on address %s (port %s) returned %s\n", serv_addr, serv_port_up, gai_strerror(i));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -680,11 +577,11 @@ int main(void)
 		else break; /* success, get out of loop */
 	}
 	if (q == NULL) {
-		LOG(LOG_ERR,"[down] failed to open socket to any of server %s addresses (port %s)\n", serv_addr, serv_port_up);
+		MSG("ERROR: [down] failed to open socket to any of server %s addresses (port %s)\n", serv_addr, serv_port_up);
 		i = 1;
 		for (q=result; q!=NULL; q=q->ai_next) {
 			getnameinfo(q->ai_addr, q->ai_addrlen, host_name, sizeof host_name, port_name, sizeof port_name, NI_NUMERICHOST);
-			LOG(LOG_INFO,"[down] result %i host:%s service:%s\n", i, host_name, port_name);
+			MSG("INFO: [down] result %i host:%s service:%s\n", i, host_name, port_name);
 			++i;
 		}
 		exit(EXIT_FAILURE);
@@ -693,7 +590,7 @@ int main(void)
 	/* connect so we can send/receive packet with the server only */
 	i = connect(sock_down, q->ai_addr, q->ai_addrlen);
 	if (i != 0) {
-		LOG(LOG_ERR,"[down] connect returned %s\n", strerror(errno));
+		MSG("ERROR: [down] connect returned %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	freeaddrinfo(result);
@@ -701,21 +598,21 @@ int main(void)
 	/* starting the concentrator */
 	i = lgw_start();
 	if (i == LGW_HAL_SUCCESS) {
-		LOG(LOG_NOTICE,"[main] concentrator started, packet can now be received\n");
+		MSG("INFO: [main] concentrator started, packet can now be received\n");
 	} else {
-		LOG(LOG_ERR,"[main] failed to start the concentrator\n");
+		MSG("ERROR: [main] failed to start the concentrator\n");
 		exit(EXIT_FAILURE);
 	}
 	
 	/* spawn threads to manage upstream and downstream */
 	i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
 	if (i != 0) {
-		LOG(LOG_ERR,"[main] impossible to create upstream thread\n");
+		MSG("ERROR: [main] impossible to create upstream thread\n");
 		exit(EXIT_FAILURE);
 	}
 	i = pthread_create( &thrid_down, NULL, (void * (*)(void *))thread_down, NULL);
 	if (i != 0) {
-		LOG(LOG_ERR,"[main] impossible to create downstream thread\n");
+		MSG("ERROR: [main] impossible to create downstream thread\n");
 		exit(EXIT_FAILURE);
 	}
 	
@@ -794,21 +691,21 @@ int main(void)
 		} else {
 			dw_ack_ratio = 0.0;
 		}
-        
+		
 		/* display a report */
-		LOG(LOG_DEBUG,"\n##### %s #####\n", stat_timestamp);
-		LOG(LOG_DEBUG,"### [UPSTREAM] ###\n");
-		LOG(LOG_DEBUG,"# RF packets received by concentrator: %u\n", cp_nb_rx_rcv);
-		LOG(LOG_DEBUG,"# CRC_OK: %.2f%%, CRC_FAIL: %.2f%%, NO_CRC: %.2f%%\n", 100.0 * rx_ok_ratio, 100.0 * rx_bad_ratio, 100.0 * rx_nocrc_ratio);
-		LOG(LOG_DEBUG,"# RF packets forwarded: %u (%u bytes)\n", cp_up_pkt_fwd, cp_up_payload_byte);
-		LOG(LOG_DEBUG,"# PUSH_DATA datagrams sent: %u (%u bytes)\n", cp_up_dgram_sent, cp_up_network_byte);
-		LOG(LOG_DEBUG,"# PUSH_DATA acknowledged: %.2f%%\n", 100.0 * up_ack_ratio);
-		LOG(LOG_DEBUG,"### [DOWNSTREAM] ###\n");
-		LOG(LOG_DEBUG,"# PULL_DATA sent: %u (%.2f%% acknowledged)\n", cp_dw_pull_sent, 100.0 * dw_ack_ratio);
-		LOG(LOG_DEBUG,"# PULL_RESP(onse) datagrams received: %u (%u bytes)\n", cp_dw_dgram_rcv, cp_dw_network_byte);
-		LOG(LOG_DEBUG,"# RF packets sent to concentrator: %u (%u bytes)\n", (cp_nb_tx_ok+cp_nb_tx_fail), cp_dw_payload_byte);
-		LOG(LOG_DEBUG,"# TX errors: %u\n", cp_nb_tx_fail);
-		LOG(LOG_DEBUG,"##### END #####\n");
+		printf("\n##### %s #####\n", stat_timestamp);
+		printf("### [UPSTREAM] ###\n");
+		printf("# RF packets received by concentrator: %u\n", cp_nb_rx_rcv);
+		printf("# CRC_OK: %.2f%%, CRC_FAIL: %.2f%%, NO_CRC: %.2f%%\n", 100.0 * rx_ok_ratio, 100.0 * rx_bad_ratio, 100.0 * rx_nocrc_ratio);
+		printf("# RF packets forwarded: %u (%u bytes)\n", cp_up_pkt_fwd, cp_up_payload_byte);
+		printf("# PUSH_DATA datagrams sent: %u (%u bytes)\n", cp_up_dgram_sent, cp_up_network_byte);
+		printf("# PUSH_DATA acknowledged: %.2f%%\n", 100.0 * up_ack_ratio);
+		printf("### [DOWNSTREAM] ###\n");
+		printf("# PULL_DATA sent: %u (%.2f%% acknowledged)\n", cp_dw_pull_sent, 100.0 * dw_ack_ratio);
+		printf("# PULL_RESP(onse) datagrams received: %u (%u bytes)\n", cp_dw_dgram_rcv, cp_dw_network_byte);
+		printf("# RF packets sent to concentrator: %u (%u bytes)\n", (cp_nb_tx_ok+cp_nb_tx_fail), cp_dw_payload_byte);
+		printf("# TX errors: %u\n", cp_nb_tx_fail);
+		printf("##### END #####\n");
 	}
 	
 	/* wait for upstream thread to finish (1 fetch cycle max) */
@@ -823,13 +720,13 @@ int main(void)
 		/* stop the hardware */
 		i = lgw_stop();
 		if (i == LGW_HAL_SUCCESS) {
-			LOG(LOG_NOTICE,"concentrator stopped successfully\n");
+			MSG("INFO: concentrator stopped successfully\n");
 		} else {
-			LOG(LOG_WARNING,"failed to stop concentrator successfully\n");
+			MSG("WARNING: failed to stop concentrator successfully\n");
 		}
 	}
-    closelog();
-	LOG(LOG_NOTICE,"Exiting packet forwarder program\n");
+	
+	MSG("INFO: Exiting packet forwarder program\n");
 	exit(EXIT_SUCCESS);
 }
 
@@ -862,7 +759,7 @@ void thread_up(void) {
 	/* set upstream socket RX timeout */
 	i = setsockopt(sock_up, SOL_SOCKET, SO_RCVTIMEO, (void *)&push_timeout_half, sizeof push_timeout_half);
 	if (i != 0) {
-		LOG(LOG_ERR,"[up] setsockopt returned %s\n", strerror(errno));
+		MSG("ERROR: [up] setsockopt returned %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -879,7 +776,7 @@ void thread_up(void) {
 		nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt);
 		pthread_mutex_unlock(&mx_concent);
 		if (nb_pkt == LGW_HAL_ERROR) {
-			LOG(LOG_ERR,"[up] failed packet fetch, exiting\n");
+			MSG("ERROR: [up] failed packet fetch, exiting\n");
 			exit(EXIT_FAILURE);
 		} else if (nb_pkt == 0) {
 			wait_ms(FETCH_SLEEP_MS); /* wait a short time if no packets */
@@ -919,7 +816,6 @@ void thread_up(void) {
 					}
 					break;
 				case STAT_CRC_BAD:
-                        LOG(LOG_NOTICE,"Received packet with bad CRC\n");
 					meas_nb_rx_bad += 1;
 					if (!fwd_error_pkt) {
 						pthread_mutex_unlock(&mx_meas_up);
@@ -927,7 +823,6 @@ void thread_up(void) {
 					}
 					break;
 				case STAT_NO_CRC:
-                    LOG(LOG_NOTICE,"Received packet with no CRC\n");
 					meas_nb_rx_nocrc += 1;
 					if (!fwd_nocrc_pkt) {
 						pthread_mutex_unlock(&mx_meas_up);
@@ -935,7 +830,7 @@ void thread_up(void) {
 					}
 					break;
 				default:
-					LOG(LOG_WARNING,"[up] received packet with unknown status %u (size %u, modulation %u, BW %u, DR %u, RSSI %.1f)\n", p->status, p->size, p->modulation, p->bandwidth, p->datarate, p->rssi);
+					MSG("WARNING: [up] received packet with unknown status %u (size %u, modulation %u, BW %u, DR %u, RSSI %.1f)\n", p->status, p->size, p->modulation, p->bandwidth, p->datarate, p->rssi);
 					pthread_mutex_unlock(&mx_meas_up);
 					continue; /* skip that packet */
 					// exit(EXIT_FAILURE);
@@ -959,7 +854,7 @@ void thread_up(void) {
 			if ((j>=0) && (j < 19)) {
 				buff_index += j;
 			} else {
-				LOG(LOG_ERR,"[up] snprintf failed line %u\n", (__LINE__ - 4));
+				MSG("ERROR: [up] snprintf failed line %u\n", (__LINE__ - 4));
 				exit(EXIT_FAILURE);
 			}
 			
@@ -973,7 +868,7 @@ void thread_up(void) {
 			if ((j>=0) && (j < 39)) {
 				buff_index += j;
 			} else {
-				LOG(LOG_ERR,"[up] snprintf failed line %u\n", (__LINE__ - 4));
+				MSG("ERROR: [up] snprintf failed line %u\n", (__LINE__ - 4));
 				exit(EXIT_FAILURE);
 			}
 			
@@ -992,7 +887,7 @@ void thread_up(void) {
 					buff_index += 9;
 					break;
 				default:
-					LOG(LOG_ERR,"[up] received packet with unknown status\n");
+					MSG("ERROR: [up] received packet with unknown status\n");
 					memcpy((void *)(buff_up + buff_index), (void *)",\"stat\":?", 9);
 					buff_index += 9;
 					exit(EXIT_FAILURE);
@@ -1030,7 +925,7 @@ void thread_up(void) {
 						buff_index += 13;
 						break;
 					default:
-						LOG(LOG_ERR,"[up] lora packet with unknown datarate\n");
+						MSG("ERROR: [up] lora packet with unknown datarate\n");
 						memcpy((void *)(buff_up + buff_index), (void *)",\"datr\":\"SF?", 12);
 						buff_index += 12;
 						exit(EXIT_FAILURE);
@@ -1049,7 +944,7 @@ void thread_up(void) {
 						buff_index += 6;
 						break;
 					default:
-						LOG(LOG_ERR,"[up] lora packet with unknown bandwidth\n");
+						MSG("ERROR: [up] lora packet with unknown bandwidth\n");
 						memcpy((void *)(buff_up + buff_index), (void *)"BW?\"", 4);
 						buff_index += 4;
 						exit(EXIT_FAILURE);
@@ -1078,7 +973,7 @@ void thread_up(void) {
 						buff_index += 13;
 						break;
 					default:
-						LOG(LOG_ERR,"[up] lora packet with unknown coderate\n");
+						MSG("ERROR: [up] lora packet with unknown coderate\n");
 						memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"?\"", 11);
 						buff_index += 11;
 						exit(EXIT_FAILURE);
@@ -1089,7 +984,7 @@ void thread_up(void) {
 				if ((j>=0) && (j < 14)) {
 					buff_index += j;
 				} else {
-					LOG(LOG_ERR,"[up] snprintf failed line %u\n", (__LINE__ - 4));
+					MSG("ERROR: [up] snprintf failed line %u\n", (__LINE__ - 4));
 					exit(EXIT_FAILURE);
 				}
 			} else if (p->modulation == MOD_FSK) {
@@ -1098,7 +993,7 @@ void thread_up(void) {
 				
 				// TODO: add datarate metadata
 			} else {
-                    LOG(LOG_ERR,"[up] received packet with unknown modulation\n");
+				MSG("ERROR: [up] received packet with unknown modulation\n");
 				exit(EXIT_FAILURE);
 			}
 			
@@ -1107,7 +1002,7 @@ void thread_up(void) {
 			if ((j>=0) && (j < 23)) {
 				buff_index += j;
 			} else {
-				LOG(LOG_ERR,"[up] snprintf failed line %u\n", (__LINE__ - 4));
+				MSG("ERROR: [up] snprintf failed line %u\n", (__LINE__ - 4));
 				exit(EXIT_FAILURE);
 			}
 			
@@ -1118,7 +1013,7 @@ void thread_up(void) {
 			if (j>=0) {
 				buff_index += j;
 			} else {
-				LOG(LOG_ERR,"[up] bin_to_b64 failed line %u\n", (__LINE__ - 5));
+				MSG("ERROR: [up] bin_to_b64 failed line %u\n", (__LINE__ - 5));
 				exit(EXIT_FAILURE);
 			}
 			buff_up[buff_index] = '"';
@@ -1144,9 +1039,7 @@ void thread_up(void) {
 		++buff_index;
 		buff_up[buff_index] = 0; /* add string terminator, for safety */
 		
-		//printf("\nJSON up: %s\n", (char *)(buff_up + 12)); /* DEBUG:
-		//display JSON payload */
-        dump_packet(p,buff_up,12); //header size (before json) is 12
+		//printf("\nJSON up: %s\n", (char *)(buff_up + 12)); /* DEBUG: display JSON payload */
 		
 		/* send datagram to server */
 		send(sock_up, (void *)buff_up, buff_index, 0);
@@ -1177,7 +1070,7 @@ void thread_up(void) {
 		}
 		pthread_mutex_unlock(&mx_meas_up);
 	}
-	LOG(LOG_DEBUG,"\n End of upstream thread\n");
+	MSG("\nINFO: End of upstream thread\n");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1214,7 +1107,7 @@ void thread_down(void) {
 	/* set downstream socket RX timeout */
 	i = setsockopt(sock_down, SOL_SOCKET, SO_RCVTIMEO, (void *)&pull_timeout, sizeof pull_timeout);
 	if (i != 0) {
-		LOG(LOG_ERR,"[down] setsockopt returned %s\n", strerror(errno));
+		MSG("ERROR: [down] setsockopt returned %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -1246,13 +1139,13 @@ void thread_down(void) {
 			
 			/* if no network message was received, got back to listening sock_down socket */
 			if (msg_len == -1) {
-				//LOG(LOG_WARNING,"[down] recv returned %s\n", strerror(errno)); /* too verbose */
+				//MSG("WARNING: [down] recv returned %s\n", strerror(errno)); /* too verbose */
 				continue;
 			}
 			
 			/* if the datagram does not respect protocol, just ignore it */
 			if ((msg_len < 4) || (buff_down[0] != PROTOCOL_VERSION) || ((buff_down[3] != PKT_PULL_RESP) && (buff_down[3] != PKT_PULL_ACK))) {
-				LOG(LOG_WARNING,"[down] ignoring invalid packet\n");
+				MSG("WARNING: [down] ignoring invalid packet\n");
 				continue;
 			}
 			
@@ -1260,26 +1153,24 @@ void thread_down(void) {
 			if (buff_down[3] == PKT_PULL_ACK) {
 				if ((buff_down[1] == token_h) && (buff_down[2] == token_l)) {
 					if (req_ack) {
-						LOG(LOG_DEBUG,"[down] duplicate ACK received :)\n");
+						MSG("INFO: [down] duplicate ACK received :)\n");
 					} else { /* if that packet was not already acknowledged */
 						req_ack = true;
 						pthread_mutex_lock(&mx_meas_dw);
 						meas_dw_ack_rcv += 1;
 						pthread_mutex_unlock(&mx_meas_dw);
-						LOG(LOG_DEBUG,"[down] ACK received :)\n"); /* very verbose */
+						MSG("INFO: [down] ACK received :)\n"); /* very verbose */
 					}
 				} else { /* out-of-sync token */
-					LOG(LOG_DEBUG,"[down] received out-of-sync ACK\n");
+					MSG("INFO: [down] received out-of-sync ACK\n");
 				}
 				continue;
 			}
 			
 			/* the datagram is a PULL_RESP */
 			buff_down[msg_len] = 0; /* add string terminator, just to be safe */
-			LOG(LOG_DEBUG,"[down] PULL_RESP received :)\n"); /* very verbose */
-			// printf("\nJSON down: %s\n", (char *)(buff_down + 4));
-			// /* DEBUG: display JSON payload */
-            dump_json(buff_down,4); // header size (before json
+			MSG("INFO: [down] PULL_RESP received :)\n"); /* very verbose */
+			// printf("\nJSON down: %s\n", (char *)(buff_down + 4)); /* DEBUG: display JSON payload */
 			
 			/* initialize TX struct and try to parse JSON */
 			memset(&txpkt, 0, sizeof txpkt);
@@ -1302,16 +1193,16 @@ void thread_down(void) {
 			if (i == 1) {
 				/* TX procedure: send immediately */
 				sent_immediate = true;
-				LOG(LOG_DEBUG,"[down] a packet will be sent in \"immediate\" mode\n");
+				MSG("INFO: [down] a packet will be sent in \"immediate\" mode\n");
 			} else {
 				sent_immediate = false;
 				val = json_object_get_value(txpk_obj,"tmst");
 				if (val != NULL) {
 					/* TX procedure: send on timestamp value */
 					txpkt.count_us = (uint32_t)json_value_get_number(val);
-					LOG(LOG_INFO,"[down] a packet will be sent on timestamp value %u\n", txpkt.count_us);
+					MSG("INFO: [down] a packet will be sent on timestamp value %u\n", txpkt.count_us);
 				} else {
-					LOG(LOG_WARNING,"[down] only \"immediate\" and \"timestamp\" modes supported, TX aborted\n");
+					MSG("WARNING: [down] only \"immediate\" and \"timestamp\" modes supported, TX aborted\n");
 					json_value_free(root_val);
 					continue;
 				}
@@ -1326,7 +1217,7 @@ void thread_down(void) {
 			/* parse target frequency (mandatory) */
 			val = json_object_get_value(txpk_obj,"freq");
 			if (val == NULL) {
-				LOG(LOG_WARNING,"[down] no mandatory \"txpk.freq\" object in JSON, TX aborted\n");
+				MSG("WARNING: [down] no mandatory \"txpk.freq\" object in JSON, TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
@@ -1335,7 +1226,7 @@ void thread_down(void) {
 			/* parse RF chain used for TX (mandatory) */
 			val = json_object_get_value(txpk_obj,"rfch");
 			if (val == NULL) {
-				LOG(LOG_WARNING,"[down] no mandatory \"txpk.rfch\" object in JSON, TX aborted\n");
+				MSG("WARNING: [down] no mandatory \"txpk.rfch\" object in JSON, TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
@@ -1350,7 +1241,7 @@ void thread_down(void) {
 			/* Parse modulation (mandatory) */
 			str = json_object_get_string(txpk_obj, "modu");
 			if (str == NULL) {
-				LOG(LOG_WARNING,"[down] no mandatory \"txpk.modu\" object in JSON, TX aborted\n");
+				MSG("WARNING: [down] no mandatory \"txpk.modu\" object in JSON, TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
@@ -1361,13 +1252,13 @@ void thread_down(void) {
 				/* Parse Lora spreading-factor and modulation bandwidth (mandatory) */
 				str = json_object_get_string(txpk_obj, "datr");
 				if (str == NULL) {
-					LOG(LOG_WARNING,"[down] no mandatory \"txpk.datr\" object in JSON, TX aborted\n");
+					MSG("WARNING: [down] no mandatory \"txpk.datr\" object in JSON, TX aborted\n");
 					json_value_free(root_val);
 					continue;
 				}
 				i = sscanf(str, "SF%2hdBW%3hd", &x0, &x1);
 				if (i != 2) {
-					LOG(LOG_WARNING,"[down] format error in \"txpk.datr\", TX aborted\n");
+					MSG("WARNING: [down] format error in \"txpk.datr\", TX aborted\n");
 					json_value_free(root_val);
 					continue;
 				}
@@ -1379,7 +1270,7 @@ void thread_down(void) {
 					case 11: txpkt.datarate = DR_LORA_SF11; break;
 					case 12: txpkt.datarate = DR_LORA_SF12; break;
 					default:
-						LOG(LOG_WARNING,"[down] format error in \"txpk.datr\", invalid SF, TX aborted\n");
+						MSG("WARNING: [down] format error in \"txpk.datr\", invalid SF, TX aborted\n");
 						json_value_free(root_val);
 						continue;
 				}
@@ -1388,7 +1279,7 @@ void thread_down(void) {
 					case 250: txpkt.bandwidth = BW_250KHZ; break;
 					case 500: txpkt.bandwidth = BW_500KHZ; break;
 					default:
-						LOG(LOG_WARNING,"[down] format error in \"txpk.datr\", invalid BW, TX aborted\n");
+						MSG("WARNING: [down] format error in \"txpk.datr\", invalid BW, TX aborted\n");
 						json_value_free(root_val);
 						continue;
 				}
@@ -1396,7 +1287,7 @@ void thread_down(void) {
 				/* Parse ECC coding rate (optional field) */
 				str = json_object_get_string(txpk_obj, "codr");
 				if (str == NULL) {
-					LOG(LOG_WARNING,"[down] no mandatory \"txpk.codr\" object in json, TX aborted\n");
+					MSG("WARNING: [down] no mandatory \"txpk.codr\" object in json, TX aborted\n");
 					json_value_free(root_val);
 					continue;
 				}
@@ -1407,7 +1298,7 @@ void thread_down(void) {
 				else if (strcmp(str, "4/8") == 0) txpkt.coderate = CR_LORA_4_8;
 				else if (strcmp(str, "1/2") == 0) txpkt.coderate = CR_LORA_4_8;
 				else {
-					LOG(LOG_WARNING,"[down] format error in \"txpk.codr\", TX aborted\n");
+					MSG("WARNING: [down] format error in \"txpk.codr\", TX aborted\n");
 					json_value_free(root_val);
 					continue;
 				}
@@ -1447,7 +1338,7 @@ void thread_down(void) {
 				//}
 				
 			} else {
-				LOG(LOG_WARNING,"[down] invalid modulation in \"txpk.modu\", TX aborted\n");
+				MSG("WARNING: [down] invalid modulation in \"txpk.modu\", TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
@@ -1455,7 +1346,7 @@ void thread_down(void) {
 			/* Parse payload length (mandatory) */
 			val = json_object_get_value(txpk_obj,"size");
 			if (val == NULL) {
-				LOG(LOG_WARNING,"[down] no mandatory \"txpk.size\" object in JSON, TX aborted\n");
+				MSG("WARNING: [down] no mandatory \"txpk.size\" object in JSON, TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
@@ -1464,13 +1355,13 @@ void thread_down(void) {
 			/* Parse payload data (mandatory) */
 			str = json_object_get_string(txpk_obj, "data");
 			if (str == NULL) {
-				LOG(LOG_WARNING,"[down] no mandatory \"txpk.data\" object in JSON, TX aborted\n");
+				MSG("WARNING: [down] no mandatory \"txpk.data\" object in JSON, TX aborted\n");
 				json_value_free(root_val);
 				continue;
 			}
 			i = b64_to_bin(str, strlen(str), txpkt.payload, sizeof txpkt.payload);
 			if (i != txpkt.size) {
-				LOG(LOG_WARNING,"[down] mismatch between .size and .data size once converter to binary\n");
+				MSG("WARNING: [down] mismatch between .size and .data size once converter to binary\n");
 			}
 			
 			/* free the JSON parse tree from memory */
@@ -1496,7 +1387,7 @@ void thread_down(void) {
 			if (i == LGW_HAL_ERROR) {
 				meas_nb_tx_fail += 1;
 				pthread_mutex_unlock(&mx_meas_dw);
-				LOG(LOG_WARNING,"[down] lgw_send failed\n");
+				MSG("WARNING: [down] lgw_send failed\n");
 				continue;
 			} else {
 				meas_nb_tx_ok += 1;
@@ -1504,7 +1395,7 @@ void thread_down(void) {
 			}
 		}
 	}
-	LOG(LOG_DEBUG,"End of downstream thread\n");
+	MSG("\nINFO: End of downstream thread\n");
 }
 
 /* --- EOF ------------------------------------------------------------------ */

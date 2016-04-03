@@ -1,7 +1,7 @@
 ### Environment constants 
 
 LGW_PATH := ../../lora_gateway/libloragw
-CROSS_COMPILE :=
+CROSS_COMPILE :=/opt/toolchains/arm-2011.03-wirma2/bin/arm-none-linux-gnueabi-
 export
 
 ### general build targets

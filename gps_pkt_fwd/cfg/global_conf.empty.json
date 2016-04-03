@@ -82,7 +82,7 @@
 		// "forward_crc_valid": true,			// configure if certain types of packets are forwarded or ignored
 		// "forward_crc_error": false,			// configure if certain types of packets are forwarded or ignored
 		// "forward_crc_disabled": false,		// configure if certain types of packets are forwarded or ignored
-		// "gps_tty_path": "/dev/ttyACM0",		// path to TTY devices configured to receive GPS NMEA frames
+		// "gps_tty_path": "/dev/nmea",		// path to TTY devices configured to receive GPS NMEA frames
 		// "ref_latitude": 47.00638,			// reference latitude in degrees (brodcasted in beacons), N is +
 		// "ref_longitude": 6.96655,			// reference longitude in degrees (brodcasted in beacons), E is +
 		// "ref_altitude": 440,					// reference altitude in meters

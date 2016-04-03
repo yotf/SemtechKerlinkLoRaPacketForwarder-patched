@@ -2,47 +2,41 @@
 	"SX1301_conf": {
 		"radio_0": {
 			"enable": true,
-			"freq": 471500000
+			"freq": 868200000
 		},
 		"chan_multiSF_0": {
-			/* Lora MAC channel, 125kHz, all SF, 471.1 MHz */
+			/* Lora MAC channel, 125kHz, all SF, 868.1 MHz */
 			"enable": true,
 			"radio": 0,
-			"if": -400000
+			"if": -100000
 		},
 		"chan_multiSF_1": {
-			/* Lora MAC channel, 125kHz, all SF, 471.3 MHz */
+			/* Lora MAC channel, 125kHz, all SF, 868.3 MHz */
 			"enable": true,
 			"radio": 0,
-			"if": -200000
+			"if": 100000
 		},
 		"chan_multiSF_2": {
-			/* Lora MAC channel, 125kHz, all SF, 471.5 MHz */
+			/* Lora MAC channel, 125kHz, all SF, 868.5 MHz */
 			"enable": true,
 			"radio": 0,
-			"if": 0
-		},
-		"chan_multiSF_3": {
-			/* Lora MAC channel, 125kHz, all SF, 471.7 MHz */
-			"enable": true,
-			"radio": 0,
-			"if": 200000
+			"if": 300000
 		},
 		"chan_Lora_std": {
-			/* Lora MAC channel, 125kHz, SF7, 471.9 MHz */
+			/* Lora MAC channel, 250kHz, SF7, 868.3 MHz */
 			"enable": true,
 			"radio": 0,
-			"if": 400000,
-			"bandwidth": 125000,
+			"if": 100000,
+			"bandwidth": 250000,
 			"spread_factor": 7
 		},
 		"chan_FSK": {
-			/* FSK 64kbps channel, 471.9 MHz */
+			/* FSK 100kbps channel, 868.3 MHz */
 			"enable": true,
 			"radio": 0,
-			"if": 400000,
-			"bandwidth": 200000,
-			"datarate": 64000
+			"if": 100000,
+			"bandwidth": 250000,
+			"datarate": 100000
 		}
 	},
 	"gateway_conf": {
@@ -58,8 +52,6 @@
 		/* forward only valid packets */
 		"forward_crc_valid": true,
 		"forward_crc_error": false,
-		"forward_crc_disabled": false,
-		/* GPS configuration */
-		"gps_tty_path": "/dev/nmea"
+		"forward_crc_disabled": false
 	}
 }
