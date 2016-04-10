@@ -90,6 +90,9 @@ Maintainer: Sylvain Miermont
 
 #define MIN_LORA_PREAMB	6 /* minimum Lora preamble length for this application */
 
+#define DOWNSTREAM 1
+#define UPSTREAM 0
+
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE VARIABLES (GLOBAL) ------------------------------------------- */
 
@@ -157,9 +160,9 @@ int parse_SX1301_configuration(const char * conf_file);
 
 int parse_gateway_configuration(const char * conf_file);
 
-static void dump_packet(struct lgw_pkt_rx_s * pkt, uint8_t * json_buff, int header_size);
-
 static void dump_json(uint8_t * json_buff, int header_size);
+
+static void dump_packet(const uint8_t* payload,int payload_size, uint8_t * json_buff, int header_size, uint8_t stream);
 
 static int parse_logging_configuration(const char * conf_file);
 
@@ -170,7 +173,6 @@ void thread_down(void);
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
-/* Print the JSON and the payload in HEX */
 
 static int parse_logging_configuration(const char * conf_file){
     const char conf_obj_name[] = "logging_conf";
@@ -507,25 +509,27 @@ static void dump_json(uint8_t * json_buff, int header_size){
 }
 
 /*  Print out json and payload in HEX to stdout/stderr or syslog, depending on local configuration */
-static void dump_packet(struct lgw_pkt_rx_s * pkt, uint8_t * json_buff, int header_size){
+static void dump_packet(const uint8_t* payload,int payload_size, uint8_t * json_buff, int header_size, uint8_t stream){
         
-        char hex_buff[2*pkt->size+1]; // 1 byte is 2 HEX digits (in
+        char hex_buff[2*payload_size+1]; // 1 byte is 2 HEX digits (in
                                       // hex string) +1 for '\0'
         char *ptr_hex = hex_buff; // moving pointer
 
         dump_json(json_buff,header_size);
 
         // convert payload to hex string
-        for (int i = 0; i <  pkt->size; i++)
+        for (int i = 0; i <  payload_size; i++)
 		{
-                ptr_hex += sprintf(ptr_hex,"%02X", pkt->payload[i]);
+                ptr_hex += sprintf(ptr_hex,"%02X", payload[i]);
 		}
 
-        LOG(LOG_INFO,"The payload in HEX: %s\n", hex_buff);
+        LOG(LOG_INFO,"[%s]The payload in HEX: %s\n",((stream==UPSTREAM)?"up":"down"), hex_buff);
 
         
         
 }
+
+
 
 
 
@@ -1146,7 +1150,7 @@ void thread_up(void) {
 		
 		//printf("\nJSON up: %s\n", (char *)(buff_up + 12)); /* DEBUG:
 		//display JSON payload */
-        dump_packet(p,buff_up,12); //header size (before json) is 12
+        dump_packet(p->payload, p->size,buff_up,12,UPSTREAM); //header size (before json) is 12
 		
 		/* send datagram to server */
 		send(sock_up, (void *)buff_up, buff_index, 0);
@@ -1279,7 +1283,7 @@ void thread_down(void) {
 			LOG(LOG_DEBUG,"[down] PULL_RESP received :)\n"); /* very verbose */
 			// printf("\nJSON down: %s\n", (char *)(buff_down + 4));
 			// /* DEBUG: display JSON payload */
-            dump_json(buff_down,4); // header size (before json
+
 			
 			/* initialize TX struct and try to parse JSON */
 			memset(&txpkt, 0, sizeof txpkt);
@@ -1468,10 +1472,19 @@ void thread_down(void) {
 				json_value_free(root_val);
 				continue;
 			}
+
+
 			i = b64_to_bin(str, strlen(str), txpkt.payload, sizeof txpkt.payload);
 			if (i != txpkt.size) {
 				LOG(LOG_WARNING,"[down] mismatch between .size and .data size once converter to binary\n");
 			}
+            //pass the same fields as when doing for upstream
+            //just here we are reading them from the json we recieved
+            //from nodeG, and in a structure appropriate for sending
+            //and there we were putting them in a json to send to
+            //NodeG
+            //header size before json is 4
+            dump_packet(txpkt.payload,txpkt.size,buff_down,4,DOWNSTREAM); 
 			
 			/* free the JSON parse tree from memory */
 			json_value_free(root_val);
